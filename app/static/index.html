@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>受控出口代理 · Controlled Egress Proxy</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #171d25; --panel-2: #1e2530; --line: #2b3542;
+    --text: #e6edf3; --muted: #8b98a8; --accent: #4aa8ff; --ok: #3fb950;
+    --bad: #f85149; --warn: #d29922; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans CJK SC", sans-serif;
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    background: linear-gradient(180deg, #1a2330, #121820);
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .badge {
+    font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+  }
+  .badge.ok { color: var(--ok); border-color: #1f4d2a; }
+  .badge.bad { color: var(--bad); border-color: #5a2020; }
+  main { max-width: 1180px; margin: 0 auto; padding: 20px 24px 64px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .card > h2 {
+    margin: 0; padding: 14px 18px; font-size: 14px; font-weight: 600;
+    border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px;
+  }
+  .card > h2 .hint { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: auto; }
+  .card .body { padding: 16px 18px; }
+  .card.span2 { grid-column: 1 / -1; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button.primary { background: #1f4e7a; border-color: #2a6aa3; }
+  button.primary:hover:not(:disabled) { background: #235a8d; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.small { padding: 3px 9px; font-size: 12px; }
+  input, textarea, select {
+    font: inherit; background: #0c1117; color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 10px; width: 100%;
+  }
+  textarea { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; resize: vertical; min-height: 220px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .row > * { flex-shrink: 0; }
+  .grow { flex: 1 1 auto; min-width: 120px; }
+  .msg { margin-top: 10px; font-size: 13px; padding: 9px 12px; border-radius: 7px; display: none; white-space: pre-wrap; }
+  .msg.show { display: block; }
+  .msg.ok { background: #10281a; border: 1px solid #1f4d2a; color: #8ee6a1; }
+  .msg.bad { background: #2a1414; border: 1px solid #5a2020; color: #ffb3ad; }
+  .msg.warn { background: #2a2210; border: 1px solid #5a4a14; color: #f0d47a; }
+  .errors { margin: 10px 0 0; padding-left: 20px; color: #ffb3ad; font-size: 12.5px; max-height: 160px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px; }
+  tr:hover td { background: #1a212b; }
+  td.mono, .mono { font-family: var(--mono); font-size: 12px; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .tag.allowed { color: var(--ok); border-color: #1f4d2a; background: #10281a; }
+  .tag.denied { color: var(--bad); border-color: #5a2020; background: #2a1414; }
+  .tag.error { color: var(--warn); border-color: #5a4a14; background: #2a2210; }
+  .tag.connected { color: var(--accent); border-color: #234a6b; background: #102231; }
+  .mut { color: var(--muted); }
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; }
+  .stat .n { font-size: 22px; font-weight: 650; font-family: var(--mono); }
+  .stat .l { font-size: 11.5px; color: var(--muted); }
+  .rev { display: flex; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .rev:last-child { border-bottom: 0; }
+  .pre {
+    background: #0c1117; border: 1px solid var(--line); border-radius: 7px;
+    padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap;
+    word-break: break-all; max-height: 260px; overflow: auto;
+  }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .tabs { display: flex; gap: 6px; }
+  .tabs button { font-size: 12px; padding: 3px 10px; }
+  .tabs button.active { border-color: var(--accent); color: var(--accent); }
+  .pager { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 12px; }
+  .pager span { font-size: 12px; color: var(--muted); }
+  .toast { position: fixed; right: 20px; bottom: 20px; max-width: 420px; z-index: 10; }
+</style>
+</head>
+<body>
+<header>
+  <h1>受控出口代理</h1>
+  <span class="sub">HTTP CONNECT 隧道 · 域名 / 端口 / IPv4 网段准入</span>
+  <span class="badge" id="healthBadge">检查中…</span>
+  <span class="badge" id="revisionBadge">规则版本 —</span>
+</header>
+
+<main>
+  <div class="grid">
+    <section class="card">
+      <h2>允许规则 <span class="hint" id="rulesHint">尚未加载</span></h2>
+      <div class="body">
+        <label for="rulesText">JSON 规则数组：host（域名、*.example.com 或 IPv4）、ports、networks（IPv4 CIDR）</label>
+        <textarea id="rulesText" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:10px">
+          <input id="noteInput" class="grow" placeholder="变更说明（可选）" maxlength="200">
+          <button id="validateBtn">校验</button>
+          <button id="saveBtn" class="primary">提交为新版本</button>
+        </div>
+        <div id="rulesMsg" class="msg"></div>
+        <ul id="ruleErrors" class="errors" hidden></ul>
+        <p class="mut" style="font-size:12px;margin:12px 0 0">
+          提交后生成新的不可变版本。每条连接只按它开始时的已提交版本判断；之后提交的规则不影响正在传输的隧道。
+        </p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>试连演示服务 <span class="hint">经代理 CONNECT</span></h2>
+      <div class="body">
+        <div class="row">
+          <div class="grow">
+            <label for="probeHost">主机</label>
+            <input id="probeHost" placeholder="演示主机">
+          </div>
+          <div style="width:120px">
+            <label for="probePort">端口</label>
+            <input id="probePort" type="number" min="1" max="65535">
+          </div>
+          <button id="probeBtn" class="primary" style="margin-top:18px">试连</button>
+        </div>
+        <div id="probeMsg" class="msg"></div>
+        <div id="probeOut" style="margin-top:12px" hidden>
+          <label>代理应答 / 服务响应</label>
+          <div class="pre" id="probePre"></div>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <span class="mut" style="font-size:12px">当前规则版本</span>
+          <span class="tag" id="probeRevision">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card span2">
+      <h2>准入记录 <span class="hint" id="admissionCount"></span></h2>
+      <div class="body">
+        <div class="row" style="margin-bottom:12px">
+          <div class="tabs" id="decisionTabs">
+            <button data-decision="" class="active">全部</button>
+            <button data-decision="allowed">允许</button>
+            <button data-decision="denied">拒绝</button>
+            <button data-decision="error">错误</button>
+          </div>
+          <input id="searchInput" class="grow" placeholder="按主机 / 详情 / 客户端过滤" style="max-width:320px;margin-left:auto">
+          <button id="refreshBtn" class="small">刷新</button>
+        </div>
+        <div class="stats" id="stats" style="margin-bottom:14px"></div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th><th>结果</th><th>目标</th><th>解析地址</th><th>版本</th>
+                <th>规则</th><th>状态</th><th>流量（上/下）</th><th>详情</th>
+              </tr>
+            </thead>
+            <tbody id="admissionsBody">
+              <tr><td colspan="9" class="mut">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span id="pageInfo"></span>
+          <button id="prevBtn" class="small">上一页</button>
+          <button id="nextBtn" class="small">下一页</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>规则版本历史</h2>
+      <div class="body" id="revisions"><span class="mut">加载中…</span></div>
+    </section>
+
+    <section class="card">
+      <h2>运行配置</h2>
+      <div class="body" id="runtimeConfig"><span class="mut">加载中…</span></div>
+    </section>
+  </div>
+</main>
+
+<div class="toast"><div id="toast" class="msg"></div></div>
+
+<script>
+"use strict";
+
+const state = {
+  revision: null,
+  rules: [],
+  decision: "",
+  offset: 0,
+  limit: 20,
+  total: 0,
+  search: "",
+};
+
+const $ = (id) => document.getElementById(id);
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function fmtBytes(n) {
+  if (n === null || n === undefined) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MiB`;
+}
+
+function show(el, kind, text) {
+  el.className = `msg show ${kind}`;
+  el.textContent = text;
+}
+
+function hide(el) {
+  el.className = "msg";
+  el.textContent = "";
+}
+
+function toast(kind, text) {
+  const el = $("toast");
+  show(el, kind, text);
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => hide(el), 4200);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (_) { data = { raw: text }; }
+  return { status: res.status, ok: res.ok, data };
+}
+
+function rulesText(rules) {
+  return JSON.stringify(rules, null, 2);
+}
+
+function renderRules() {
+  $("rulesText").value = state.rules.length ? rulesText(state.rules) : "[\n  \n]";
+  $("rulesHint").textContent = `版本 ${state.revision} · ${state.rules.length} 条规则`;
+  $("revisionBadge").textContent = `规则版本 ${state.revision}`;
+  $("probeRevision").textContent = `#${state.revision}`;
+}
+
+async function loadRules() {
+  const { ok, data } = await api("/api/rules");
+  if (!ok) { toast("bad", "无法加载规则"); return; }
+  state.revision = data.revision;
+  state.rules = data.rules;
+  renderRules();
+}
+
+async function loadConfig() {
+  const { ok, data } = await api("/api/config");
+  if (!ok) return;
+  $("probeHost").value = data.demo_host;
+  $("probePort").value = data.demo_port;
+  const items = [
+    ["代理监听", `${data.host_listen}:${data.proxy_port}`],
+    ["演示服务", `${data.demo_host}:${data.demo_port}`],
+    ["DNS 超时", `${data.dns_timeout}s`],
+    ["连接超时", `${data.connect_timeout}s`],
+    ["空闲超时", `${data.idle_timeout}s`],
+  ];
+  $("runtimeConfig").innerHTML = items.map(([k, v]) =>
+    `<div class="rev"><span class="mut" style="min-width:90px">${esc(k)}</span><span class="mono">${esc(v)}</span></div>`
+  ).join("");
+}
+
+async function loadHealth() {
+  const { ok, data } = await api("/api/health");
+  const badge = $("healthBadge");
+  if (!ok) { badge.className = "badge bad"; badge.textContent = "不可用"; return; }
+  badge.className = "badge ok";
+  badge.textContent = `代理 :${data.proxy_port} · 隧道 ${data.active_tunnels}`;
+}
+
+async function loadRevisions() {
+  const { ok, data } = await api("/api/rules/revisions?limit=20");
+  if (!ok) return;
+  const el = $("revisions");
+  if (!data.items.length) { el.innerHTML = '<span class="mut">暂无版本</span>'; return; }
+  el.innerHTML = data.items.map((rev) => `
+    <div class="rev">
+      <span class="tag">#${rev.revision}</span>
+      <span class="mono">${esc(fmtTime(rev.created_at))}</span>
+      <span class="mut">${rev.rules_count} 条</span>
+      <span class="mut grow" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(rev.note || "")}</span>
+      <button class="small" data-rev="${rev.revision}">载入</button>
+    </div>`).join("");
+  el.querySelectorAll("button[data-rev]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-rev");
+      const res = await api(`/api/rules/revisions/${id}`);
+      if (!res.ok) { toast("bad", "无法载入该版本"); return; }
+      $("rulesText").value = rulesText(res.data.rules);
+      toast("warn", `已把版本 #${id} 载入编辑器，提交后才会生效`);
+    });
+  });
+}
+
+function decisionTag(decision) {
+  const label = { allowed: "允许", denied: "拒绝", error: "错误" }[decision] || decision;
+  return `<span class="tag ${esc(decision)}">${esc(label)}</span>`;
+}
+
+function statusTag(row) {
+  if (row.status === "connected") return '<span class="tag connected">传输中</span>';
+  if (row.status === "connecting") return '<span class="tag">连接中</span>';
+  if (row.status === "idle_timeout") return '<span class="tag error">空闲超时</span>';
+  if (row.status === "error") return '<span class="tag error">错误</span>';
+  return `<span class="tag">${esc(row.close_reason || row.status)}</span>`;
+}
+
+function renderAdmissions(payload) {
+  const body = $("admissionsBody");
+  if (!payload.items.length) {
+    body.innerHTML = '<tr><td colspan="9" class="mut">没有匹配的记录</td></tr>';
+  } else {
+    body.innerHTML = payload.items.map((row) => {
+      const target = row.target_host ? `${esc(row.target_host)}:${esc(row.target_port)}` : '<span class="mut">—</span>';
+      const addrs = row.resolved_addresses.length
+        ? row.resolved_addresses.map((a) => `<span class="mono">${esc(a)}</span>`).join("<br>")
+        : '<span class="mut">—</span>';
+      const rev = row.revision ? `#${row.revision}` : '<span class="mut">—</span>';
+      const rule = row.rule_host ? `<span class="mono">#${row.rule_index} ${esc(row.rule_host)}</span>` : '<span class="mut">—</span>';
+      const flow = (row.status === "connected" || row.duration_ms !== null)
+        ? `${fmtBytes(row.bytes_client_to_target)} / ${fmtBytes(row.bytes_target_to_client)}`
+        : '<span class="mut">—</span>';
+      const detail = row.dial_address
+        ? `${esc(row.detail)}<br><span class="mut">拨号：</span><span class="mono">${esc(row.dial_address)}</span>`
+        : esc(row.detail);
+      return `<tr>
+        <td class="mono">${esc(fmtTime(row.created_at))}</td>
+        <td>${decisionTag(row.decision)}</td>
+        <td class="mono">${target}</td>
+        <td>${addrs}</td>
+        <td class="mono">${rev}</td>
+        <td>${rule}</td>
+        <td>${statusTag(row)}</td>
+        <td class="mono">${flow}</td>
+        <td>${detail}</td>
+      </tr>`;
+    }).join("");
+  }
+  const shown = payload.items.length;
+  const first = payload.total ? payload.offset + 1 : 0;
+  $("admissionCount").textContent = `共 ${payload.total} 条`;
+  $("pageInfo").textContent = `${first}–${payload.offset + shown} / ${payload.total}`;
+  $("prevBtn").disabled = payload.offset <= 0;
+  $("nextBtn").disabled = payload.offset + payload.limit >= payload.total;
+}
+
+async function loadAdmissions() {
+  const params = new URLSearchParams({ limit: state.limit, offset: state.offset });
+  if (state.decision) params.set("decision", state.decision);
+  if (state.search) params.set("q", state.search);
+  const { ok, data } = await api(`/api/admissions?${params}`);
+  if (!ok) { toast("bad", "无法加载准入记录"); return; }
+  state.total = data.total;
+  renderAdmissions(data);
+  loadSummary();
+}
+
+async function loadSummary() {
+  const { ok, data } = await api("/api/admissions/summary");
+  if (!ok) return;
+  const stats = [
+    ["总数", data.total], ["允许", data.allowed], ["拒绝", data.denied],
+    ["错误", data.error], ["进行中隧道", data.active_tunnels],
+  ];
+  $("stats").innerHTML = stats.map(([label, n]) =>
+    `<div class="stat"><div class="n">${esc(n)}</div><div class="l">${esc(label)}</div></div>`
+  ).join("");
+}
+
+async function parseRules() {
+  try {
+    const value = JSON.parse($("rulesText").value);
+    if (!Array.isArray(value)) throw new Error("顶层必须是 JSON 数组");
+    return { value };
+  } catch (err) {
+    const errors = $("ruleErrors");
+    errors.hidden = false;
+    errors.innerHTML = `<li>${esc(err.message)}</li>`;
+    show($("rulesMsg"), "bad", "JSON 解析失败");
+    return null;
+  }
+}
+
+function showRuleErrors(problems) {
+  const errors = $("ruleErrors");
+  if (!problems.length) { errors.hidden = true; errors.innerHTML = ""; return; }
+  errors.hidden = false;
+  errors.innerHTML = problems.map((p) => `<li>${esc(p)}</li>`).join("");
+}
+
+$("validateBtn").addEventListener("click", async () => {
+  const parsed = await parseRules();
+  if (!parsed) return;
+  const { ok, data } = await api("/api/rules/validate", {
+    method: "POST",
+    body: JSON.stringify({ rules: parsed.value }),
+  });
+  if (ok) {
+    showRuleErrors([]);
+    show($("rulesMsg"), "ok", `校验通过：${data.rules.length} 条规则，尚未提交。`);
+  } else {
+    showRuleErrors(data.errors || []);
+    show($("rulesMsg"), "bad", "校验未通过，规则未提交。");
+  }
+});
+
+$("saveBtn").addEventListener("click", async () => {
+  const parsed = await parseRules();
+  if (!parsed) return;
+  $("saveBtn").disabled = true;
+  try {
+    const { ok, data } = await api("/api/rules", {
+      method: "PUT",
+      body: JSON.stringify({ rules: parsed.value, note: $("noteInput").value }),
+    });
+    if (!ok) {
+      showRuleErrors(data.errors || [data.message || "提交失败"]);
+      show($("rulesMsg"), "bad", data.message || "提交被拒绝，规则未改变。");
+      return;
+    }
+    showRuleErrors([]);
+    show($("rulesMsg"), "ok",
+      `已提交版本 #${data.revision}（上一版本 ${data.previous_revision ?? "无"}）。新连接按新版本判断，已有隧道继续传输。`);
+    $("noteInput").value = "";
+    await loadRules();
+    await loadRevisions();
+    toast("ok", `规则已更新到版本 #${data.revision}`);
+  } finally {
+    $("saveBtn").disabled = false;
+  }
+});
+
+$("probeBtn").addEventListener("click", async () => {
+  const host = $("probeHost").value.trim();
+  const port = parseInt($("probePort").value, 10);
+  if (!host) { show($("probeMsg"), "bad", "请填写主机"); return; }
+  if (!Number.isInteger(port) || port < 1 || port > 65535) { show($("probeMsg"), "bad", "端口无效"); return; }
+  $("probeBtn").disabled = true;
+  show($("probeMsg"), "warn", "正在经代理试连…");
+  try {
+    const { ok, data } = await api("/api/probe", {
+      method: "POST",
+      body: JSON.stringify({ host, port }),
+    });
+    if (!ok) { show($("probeMsg"), "bad", "试连请求失败"); return; }
+    $("probeOut").hidden = false;
+    const lines = [];
+    if (data.proxy_status) lines.push(`代理: HTTP ${data.proxy_status}`);
+    if (data.proxy_headers && data.proxy_headers.length) lines.push(...data.proxy_headers);
+    if (data.status_line) lines.push(`服务: ${data.status_line}`);
+    if (data.body) lines.push("", data.body.slice(0, 4000));
+    if (data.error) lines.push("", `错误: ${data.error}`);
+    $("probePre").textContent = lines.join("\n") || "(空响应)";
+    if (data.ok) {
+      show($("probeMsg"), "ok", `隧道建立成功，用时 ${data.duration_ms} ms`);
+    } else {
+      show($("probeMsg"), "bad", data.error || "试连未成功");
+    }
+    await loadAdmissions();
+  } finally {
+    $("probeBtn").disabled = false;
+  }
+});
+
+$("decisionTabs").addEventListener("click", (event) => {
+  const btn = event.target.closest("button[data-decision]");
+  if (!btn) return;
+  $("decisionTabs").querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+  btn.classList.add("active");
+  state.decision = btn.getAttribute("data-decision");
+  state.offset = 0;
+  loadAdmissions();
+});
+
+let searchTimer = null;
+$("searchInput").addEventListener("input", (event) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.search = event.target.value.trim();
+    state.offset = 0;
+    loadAdmissions();
+  }, 250);
+});
+
+$("refreshBtn").addEventListener("click", () => { loadAdmissions(); loadHealth(); });
+$("prevBtn").addEventListener("click", () => {
+  state.offset = Math.max(0, state.offset - state.limit);
+  loadAdmissions();
+});
+$("nextBtn").addEventListener("click", () => {
+  if (state.offset + state.limit < state.total) {
+    state.offset += state.limit;
+    loadAdmissions();
+  }
+});
+
+(async function init() {
+  await Promise.all([loadConfig(), loadRules(), loadRevisions(), loadAdmissions(), loadHealth()]);
+  setInterval(() => { loadHealth(); if (state.offset === 0) loadAdmissions(); }, 5000);
+})();
+</script>
+</body>
+</html>
